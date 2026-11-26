@@ -21,6 +21,12 @@ pub mod eq;
 pub(crate) mod focus;
 pub mod tempo;
 
+#[derive(Clone, Copy)]
+pub enum Transition {
+    Natural,
+    Skip,
+}
+
 pub enum AudioCmd {
     /// A decoder is ready for playback generation `generation`; stale generations are dropped.
     /// A decoder started mid-song (`at` > 0) is the seekable kind.
@@ -34,7 +40,7 @@ pub enum AudioCmd {
     Stop,
     /// Another song is on its way: with crossfade on, fade this one out instead of
     /// stopping it, and fade the next one in when it starts.
-    Handoff,
+    Handoff(Transition),
     Seek(Duration),
     /// A song was asked for: open the device now, while its stream is still on the way.
     Warm,
@@ -162,9 +168,8 @@ impl AudioStatus {
     }
 }
 
-/// A crossfade ramp in progress, in samples. Linear, like Strawberry's and
-/// Liquidsoap's crossfades: the outgoing song gets steadily quieter as the next one
-/// comes up (an equal-power curve kept it near full volume for half the fade).
+/// A crossfade ramp in progress, in samples. The gains add to one during
+/// overlap, so even identical signals stay within the normal peak level.
 #[derive(Clone, Copy)]
 enum Ramp {
     In { at: u32, len: u32 },
@@ -174,9 +179,18 @@ enum Ramp {
 
 impl Ramp {
     fn gain(self) -> f32 {
+        let glide = |at: u32, len: u32| {
+            let t = (at as f32 / len as f32).min(1.0);
+            if cfg!(target_os = "android") {
+                // Ease in and out so the first and last beats of a fade change gently.
+                t * t * (3.0 - 2.0 * t)
+            } else {
+                t
+            }
+        };
         match self {
-            Ramp::In { at, len } => at as f32 / len as f32,
-            Ramp::Out { from, at, len } => from * (1.0 - at as f32 / len as f32),
+            Ramp::In { at, len } => glide(at, len),
+            Ramp::Out { from, at, len } => from * (1.0 - glide(at, len)),
         }
     }
 }
@@ -387,15 +401,34 @@ struct Fading {
     player: Player,
     shared: Option<Arc<Shared>>,
     out: Arc<AtomicU32>,
-    /// Still at full volume, waiting for the next song to start (as Morphe does): when
-    /// that was asked for, and how much of this song was left then.
-    waiting: Option<(Instant, Option<Duration>)>,
+    /// The outgoing song keeps playing while the next decoder is prepared.
+    waiting: Option<FadeWait>,
+}
+
+struct FadeWait {
+    transition: Transition,
+    since: Duration,
+    position: Arc<AtomicU64>,
+    length: Option<Duration>,
+}
+
+impl FadeWait {
+    fn position(&self) -> Duration {
+        Duration::from_millis(self.position.load(Ordering::Relaxed))
+    }
+
+    fn skip_timed_out(&self, speed: f32) -> bool {
+        matches!(self.transition, Transition::Skip)
+            && self.position().saturating_sub(self.since).div_f32(speed) >= HANDOFF_WAIT
+    }
 }
 
 impl Fading {
     /// Start the fade-out, over what's left of the song if that's shorter. Returns its length.
-    fn start(&mut self, crossfade: u32) -> u32 {
-        let left = self.waiting.take().and_then(|(at, left)| Some(left?.saturating_sub(at.elapsed())));
+    fn start(&mut self, crossfade: u32, speed: f32) -> u32 {
+        let left = self.waiting.take().and_then(|wait| {
+            Some(wait.length?.saturating_sub(wait.position()).div_f32(speed))
+        });
         let len = crossfade.min(left.map_or(u32::MAX, |l| l.as_millis() as u32)).max(QUICK_FADE_MS);
         self.out.store(len, Ordering::Relaxed);
         len
@@ -753,7 +786,7 @@ fn run(
                 let crossfade = status.crossfade_ms.load(Ordering::Relaxed);
                 let mut fade_in = 0;
                 for f in fading.iter_mut().filter(|f| f.waiting.is_some()) {
-                    fade_in = f.start(crossfade);
+                    fade_in = f.start(crossfade, status.speed());
                     log::debug!("audio: crossfade into generation {generation} over {fade_in} ms");
                 }
                 fade_out = Arc::new(AtomicU32::new(0));
@@ -825,7 +858,7 @@ fn run(
             }
             Ok(AudioCmd::Resume) => {
                 log::debug!("audio: resume (generation {current})");
-                if current != 0 {
+                if current != 0 || fading.iter().any(|f| !f.player.empty()) {
                     // Headphones may have come back (or gone) while paused.
                     if output.sink.is_none() || output.default_changed() {
                         output.open(tx.clone(), &status);
@@ -840,26 +873,25 @@ fn run(
             Ok(AudioCmd::AudioFocus(_)) => unreachable!("focus commands are resolved before playback"),
             // One crossfade at a time: skipping again mid-fade cuts over (below) instead
             // of piling a third song on.
-            Ok(AudioCmd::Handoff)
+            Ok(AudioCmd::Handoff(transition))
                 if status.crossfade_ms.load(Ordering::Relaxed) > 0
+                    && shared.as_ref().is_some_and(|stream| !stream.feed && stream.error().is_none())
                     && current != 0
                     && !player.is_paused()
                     && !player.empty()
                     && fading.iter().all(|f| f.player.empty()) =>
             {
                 // Keeps playing at full volume until the next song starts (see `Start`).
-                // In real time, at the speed it's playing.
-                let left = length.map(|d| d.saturating_sub(song_pos(&song_ms)).div_f32(status.speed()));
-                log::debug!("audio: handing off from generation {current}, {left:?} left");
+                let wait = FadeWait { transition, since: song_pos(&song_ms), position: song_ms.clone(), length };
+                log::debug!("audio: handing off from generation {current}");
                 let old = std::mem::replace(&mut player, Player::connect_new(&output.mixer));
-                fading.push(Fading { player: old, shared: shared.take(), out: fade_out.clone(), waiting: Some((Instant::now(), left)) });
+                fading.push(Fading { player: old, shared: shared.take(), out: fade_out.clone(), waiting: Some(wait) });
                 current = 0;
                 prepared_seek = Prepared::default();
-                status.playing.store(false, Ordering::Relaxed);
                 status.set_position(0);
             }
-            Ok(cmd @ (AudioCmd::Stop | AudioCmd::Handoff)) => {
-                if matches!(cmd, AudioCmd::Handoff) {
+            Ok(cmd @ (AudioCmd::Stop | AudioCmd::Handoff(_))) => {
+                if matches!(cmd, AudioCmd::Handoff(_)) {
                     // Skipping again mid-crossfade: everything playing goes, quickly enough
                     // to sound like a cut but without a click, and the next song comes in
                     // at full volume.
@@ -1016,13 +1048,19 @@ fn run(
             output.device = None;
         }
         if !fading.is_empty() {
-            // The next song is taking too long: don't hold this one up any longer.
-            for f in fading.iter_mut().filter(|f| f.waiting.is_some_and(|(at, _)| at.elapsed() > HANDOFF_WAIT)) {
-                log::debug!("audio: next song not ready, fading out over {} ms", f.start(status.crossfade_ms.load(Ordering::Relaxed)));
+            let speed = status.speed();
+            // A slow load can shorten a natural transition. Keep the whole tail
+            // audible while waiting, and only time out an explicit skip.
+            for f in fading.iter_mut().filter(|f| f.waiting.as_ref().is_some_and(|wait| wait.skip_timed_out(speed))) {
+                log::debug!("audio: skip still loading, fading out over {} ms", f.start(status.crossfade_ms.load(Ordering::Relaxed), speed));
             }
             fading.retain(|f| !f.player.empty());
             if fading.is_empty() {
                 log::debug!("audio: crossfade done");
+                if current == 0 {
+                    status.playing.store(false, Ordering::Relaxed);
+                    wake();
+                }
             }
         }
         if current != 0 {
@@ -1032,6 +1070,7 @@ fn run(
             // longer than the fade. (The fade's in real time: more of the song when faster.)
             let crossfade = Duration::from_millis(status.crossfade_ms.load(Ordering::Relaxed) as u64).mul_f32(status.speed());
             if !ending_sent
+                && !player.is_paused()
                 && !crossfade.is_zero()
                 && let Some(d) = length
                 && d > crossfade * 2
@@ -1115,6 +1154,21 @@ mod tests {
         assert!((b[50] - 0.5).abs() < 1e-4);
         assert_eq!(incoming.next(), Some(1.0));
         assert_eq!(outgoing.next(), None);
+    }
+
+    #[test]
+    fn a_natural_transition_waits_for_the_incoming_song() {
+        let position = Arc::new(AtomicU64::new(58_000));
+        let mut wait = FadeWait {
+            transition: Transition::Natural,
+            since: Duration::from_secs(53),
+            position,
+            length: Some(Duration::from_secs(60)),
+        };
+        assert!(!wait.skip_timed_out(1.0));
+        wait.transition = Transition::Skip;
+        assert!(wait.skip_timed_out(1.0));
+        assert!(!wait.skip_timed_out(2.0));
     }
 
     #[test]

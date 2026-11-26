@@ -2,8 +2,9 @@
 
 use egui::{Context, Event, Id, LayerId, Pos2, Rect, TouchDeviceId, TouchId, TouchPhase, Ui};
 
-const SLOP: f32 = 8.0;
-const COAST_DECAY: f32 = 0.18;
+const SLOP: f32 = 5.0;
+const COAST_DECAY: f32 = 0.32;
+const MAX_FLING_SPEED: f32 = 6000.0;
 const COAST_MIN_SPEED: f32 = 15.0;
 const RELEASE_WINDOW: f64 = 0.08;
 type Finger = (TouchDeviceId, TouchId);
@@ -98,7 +99,7 @@ impl Shelves {
                             self.delta.get_or_insert((swipe.shelf, 0.0)).1 += dx;
                             let elapsed = time - swipe.last_movement;
                             let speed = (dx / elapsed.clamp(1.0 / 120.0, RELEASE_WINDOW) as f32)
-                                .clamp(-3000.0, 3000.0);
+                                .clamp(-MAX_FLING_SPEED, MAX_FLING_SPEED);
                             swipe.velocity = if elapsed > RELEASE_WINDOW || swipe.velocity == 0.0 {
                                 speed
                             } else {
@@ -253,7 +254,8 @@ mod tests {
         assert!(first.1 < 0.0);
         assert!(scroll.tick(0.06));
         assert!(scroll.delta.take().unwrap().1.abs() < first.1.abs());
-        assert!(!scroll.tick(1.5));
+        // A fast fling keeps moving for a little longer, then settles.
+        assert!(!scroll.tick(2.0));
     }
 
     #[test]

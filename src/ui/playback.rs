@@ -388,7 +388,10 @@ impl App {
         self.audio.status.duration_ms.store(shown.duration.map_or(0, |d| d as u64 * 1000), Ordering::Relaxed);
         // A song running into the next crossfades (so does Next, when that's switched
         // on); going back or picking a song cuts over.
-        self.audio.send(if self.handoff && at.is_zero() { AudioCmd::Handoff } else { AudioCmd::Stop });
+        self.audio.send(match self.handoff.filter(|_| at.is_zero()) {
+            Some(transition) => AudioCmd::Handoff(transition),
+            None => AudioCmd::Stop,
+        });
         self.audio.send(AudioCmd::Warm);
         self.buffering = true;
         self.seek_drag = None;
@@ -562,7 +565,9 @@ impl App {
             return;
         }
         let ending = self.handoff;
-        self.handoff = ending || self.crossfade_skips;
+        if self.crossfade_skips && self.handoff.is_none() {
+            self.handoff = Some(crate::audio::Transition::Skip);
+        }
         self.play_current();
         self.handoff = ending;
     }

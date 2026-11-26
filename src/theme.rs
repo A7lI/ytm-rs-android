@@ -1514,6 +1514,8 @@ pub fn apply_chrome(ctx: &egui::Context, p: &crate::preset::Preset) {
 
 pub fn install_style(ctx: &egui::Context) {
     ctx.set_theme(egui::Theme::Dark);
+    #[cfg(target_os = "android")]
+    ctx.options_mut(|options| options.input_options.max_click_dist = 4.0);
     ctx.global_style_mut(|s| {
         s.spacing.item_spacing = egui::vec2(8.0, 6.0);
         s.spacing.button_padding = egui::vec2(14.0, 7.0);
@@ -1521,7 +1523,7 @@ pub fn install_style(ctx: &egui::Context) {
         s.spacing.scroll = egui::style::ScrollStyle::floating();
         #[cfg(target_os = "android")]
         {
-            s.spacing.scroll.kinetic.decay_time = 0.18;
+            s.spacing.scroll.kinetic.decay_time = 0.32;
             s.spacing.scroll.kinetic.rubber_band = false;
         }
         if crate::preset::active().app.hide_scrollbars {

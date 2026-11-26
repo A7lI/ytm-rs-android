@@ -539,7 +539,7 @@ pub struct App {
     tempo_on: bool,
     speed: f32,
     /// The next song starts because this one is ending: crossfade into it.
-    handoff: bool,
+    handoff: Option<crate::audio::Transition>,
     /// SponsorBlock segments for a video, and when one was last skipped.
     segments: Option<(String, Vec<crate::sponsorblock::Segment>)>,
     segment_skipped: f64,
@@ -899,8 +899,13 @@ impl App {
             glass_on: get("glass_on").is_none_or(|v| v == "1"),
             reactive_bg: get("reactive_bg").is_none_or(|v| v == "1"),
             sponsorblock: get("sponsorblock").is_some_and(|v| v == "1"),
+            // Older Android builds persisted their disabled default. Give the
+            // enabled-by-default transition its own setting on upgrade.
+            #[cfg(target_os = "android")]
+            crossfade: get("android_crossfade").is_none_or(|v| v == "1"),
+            #[cfg(not(target_os = "android"))]
             crossfade: get("crossfade").is_some_and(|v| v == "1"),
-            handoff: false,
+            handoff: None,
             crossfade_skips: get("crossfade_skips").is_some_and(|v| v == "1"),
             crossfade_secs: get("crossfade_secs").and_then(|v| v.parse().ok()).unwrap_or(5).clamp(1, CROSSFADE_MAX),
             eq_on: get("eq").is_some_and(|v| v == "1"),
@@ -1828,6 +1833,7 @@ impl eframe::App for App {
         if self.wheel.filter(&mut raw.events, raw.time.unwrap_or(0.0), raw.predicted_dt, viewport_h) {
             ctx.request_repaint();
         }
+        #[cfg(not(target_os = "android"))]
         frame_pace(raw);
         if let Some((x, y)) = dev_var("YTM_FAKE_POINTER").and_then(|v| {
             let (x, y) = v.split_once(',')?;
@@ -1932,6 +1938,9 @@ impl eframe::App for App {
         storage.set_string("glass_on", b(self.glass_on));
         storage.set_string("reactive_bg", b(self.reactive_bg));
         storage.set_string("sponsorblock", b(self.sponsorblock));
+        #[cfg(target_os = "android")]
+        storage.set_string("android_crossfade", b(self.crossfade));
+        #[cfg(not(target_os = "android"))]
         storage.set_string("crossfade", b(self.crossfade));
         storage.set_string("crossfade_secs", self.crossfade_secs.to_string());
         storage.set_string("crossfade_skips", b(self.crossfade_skips));
@@ -1981,6 +1990,7 @@ const VIDEO_QUALITIES: [u32; 4] = [1080, 720, 480, 360];
 /// The pointer moving wakes a frame per event, up to the monitor's rate, and each of those
 /// asks for more: frames wait for 60 fps unless the listener is doing something that wants
 /// every frame (clicking, typing, scrolling).
+#[cfg(not(target_os = "android"))]
 fn frame_pace(raw: &egui::RawInput) {
     use egui::Event as E;
     static LAST: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);

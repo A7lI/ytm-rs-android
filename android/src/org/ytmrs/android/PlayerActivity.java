@@ -22,6 +22,7 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.os.Bundle;
 import android.os.Build;
+import android.view.Display;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.graphics.Insets;
@@ -82,8 +83,26 @@ public final class PlayerActivity extends NativeActivity {
         // Resolve it on the player itself, including after a previous alias is disabled.
         setIntent(new Intent(getIntent()).setClass(this, PlayerActivity.class));
         super.onCreate(state);
+        preferSmoothDisplay();
         configureSafeArea();
         if (Build.VERSION.SDK_INT >= 33) unregisterBack = BackApi33.register(this);
+    }
+
+    private void preferSmoothDisplay() {
+        Window window = getWindow();
+        Display display = getWindowManager().getDefaultDisplay();
+        Display.Mode current = display.getMode();
+        float preferredRate = current.getRefreshRate();
+        for (Display.Mode mode : display.getSupportedModes()) {
+            // Keep the user's resolution and let Android select the actual refresh rate.
+            if (mode.getPhysicalWidth() == current.getPhysicalWidth()
+                    && mode.getPhysicalHeight() == current.getPhysicalHeight()) {
+                preferredRate = Math.max(preferredRate, mode.getRefreshRate());
+            }
+        }
+        WindowManager.LayoutParams attributes = window.getAttributes();
+        attributes.preferredRefreshRate = preferredRate;
+        window.setAttributes(attributes);
     }
 
     private void configureSafeArea() {

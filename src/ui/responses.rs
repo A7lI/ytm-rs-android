@@ -44,10 +44,12 @@ impl App {
                 }
                 AudioEvent::Finished { .. } => {}
                 // Crossfade into the next song; repeat-one and the end of the queue wait for the end.
-                AudioEvent::Ending { generation } if generation == self.generation && !self.jam.guest() && !self.repeats_one() => {
-                    self.handoff = true;
+                AudioEvent::Ending { generation } if generation == self.generation && !self.jam.guest()
+                    && !self.repeats_one() && self.queue.upcoming().is_some() =>
+                {
+                    self.handoff = Some(crate::audio::Transition::Natural);
                     self.next();
-                    self.handoff = false;
+                    self.handoff = None;
                 }
                 AudioEvent::Ending { .. } => {}
                 AudioEvent::Interrupted { generation, at, reason } if generation == self.generation => self.recover(at, &reason),
