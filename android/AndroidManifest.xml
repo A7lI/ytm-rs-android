@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="org.ytmrs.android" android:versionCode="30318" android:versionName="0.3.3-android.18">
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <queries>
+        <package android:name="com.discord" />
+        <intent>
+            <action android:name="com.discord.socialsdk.rpc.IDiscordRpcService" />
+        </intent>
+    </queries>
+    <application android:label="ytm-rs" android:icon="@drawable/app_icon" android:allowBackup="false"
+        android:theme="@android:style/Theme.Material.NoActionBar" android:extractNativeLibs="true" android:usesCleartextTraffic="false">
+        <service android:name=".PlaybackService" android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+        <activity android:name=".PlayerActivity" android:exported="true" android:launchMode="singleTask"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode|density"
+            android:windowSoftInputMode="adjustResize" android:enableOnBackInvokedCallback="true">
+            <meta-data android:name="android.app.lib_name" android:value="ytm_rs" />
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="ytm-rs" android:host="jam" />
+            </intent-filter>
+        </activity>
+        <activity-alias android:name=".Icon_classic" android:targetActivity=".PlayerActivity"
+            android:enabled="true" android:exported="true" android:icon="@drawable/app_icon">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".Icon_official" android:targetActivity=".PlayerActivity"
+            android:enabled="false" android:exported="true" android:icon="@drawable/icon_official">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".Icon_smilering" android:targetActivity=".PlayerActivity"
+            android:enabled="false" android:exported="true" android:icon="@drawable/icon_smilering">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".Icon_gear" android:targetActivity=".PlayerActivity"
+            android:enabled="false" android:exported="true" android:icon="@drawable/icon_gear">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".Icon_wave" android:targetActivity=".PlayerActivity"
+            android:enabled="false" android:exported="true" android:icon="@drawable/icon_wave">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".Icon_vinyl" android:targetActivity=".PlayerActivity"
+            android:enabled="false" android:exported="true" android:icon="@drawable/icon_vinyl">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".Icon_lyrics" android:targetActivity=".PlayerActivity"
+            android:enabled="false" android:exported="true" android:icon="@drawable/icon_lyrics">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".Icon_duet" android:targetActivity=".PlayerActivity"
+            android:enabled="false" android:exported="true" android:icon="@drawable/icon_duet">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".Icon_kawarp" android:targetActivity=".PlayerActivity"
+            android:enabled="false" android:exported="true" android:icon="@drawable/icon_kawarp">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".Icon_fluent" android:targetActivity=".PlayerActivity"
+            android:enabled="false" android:exported="true" android:icon="@drawable/icon_fluent">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+    </application>
+</manifest>

@@ -1,0 +1,5 @@
+Whisper base (multilingual), by OpenAI, MIT License.
+https://github.com/openai/whisper
+GGML Q5_1 conversion: https://huggingface.co/ggerganov/whisper.cpp
+
+The application runs Whisper via whisper.cpp 1.8.3, MIT License.
